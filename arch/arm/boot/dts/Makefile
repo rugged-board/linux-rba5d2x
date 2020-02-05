@@ -49,6 +49,7 @@ dtb-$(CONFIG_SOC_SAM_V7) += \
 	at91-sama5d2_ptc_ek.dtb \
 	at91-sama5d2_ptc_ek_pda4.dtb \
 	at91-sama5d27_som1_ek.dtb \
+	a5d2x-rugged_board.dtb \
 	at91-sama5d27_som1_ek_pda4.dtb \
 	at91-sama5d27_som1_ek_pda7.dtb \
 	at91-sama5d27_som1_ek_pda7b.dtb \
