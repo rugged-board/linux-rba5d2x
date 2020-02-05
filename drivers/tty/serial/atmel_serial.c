@@ -47,7 +47,7 @@
 #include <linux/err.h>
 #include <linux/irq.h>
 #include <linux/suspend.h>
-
+#include <linux/delay.h>
 #include <asm/io.h>
 #include <asm/ioctls.h>
 
@@ -158,7 +158,7 @@ struct atmel_uart_port {
 	unsigned int		tx_len;
 
 	struct circ_buf		rx_ring;
-
+	int                     rts_gpio;       /* optional RTS GPIO */
 	struct mctrl_gpios	*gpios;
 	unsigned int		tx_done_mask;
 	u32			fifo_size;
@@ -175,6 +175,7 @@ struct atmel_uart_port {
 	unsigned int		pending;
 	unsigned int		pending_status;
 	spinlock_t		lock_suspended;
+	bool			hd_start_rx;	/* can start RX during half-duplex operation */
 
 	struct {
 		u32		cr;
@@ -373,6 +374,10 @@ static int atmel_config_rs485(struct uart_port *port,
 		atmel_uart_writel(port, ATMEL_US_TTGR,
 				  rs485conf->delay_rts_after_send);
 		mode |= ATMEL_US_USMODE_RS485;
+
+		if (gpio_is_valid(port->rts_gpio)) {
+				gpio_set_value(port->rts_gpio, 0);
+		}
 	} else {
 		dev_dbg(port->dev, "Setting UART to RS232\n");
 		if (atmel_use_pdc_tx(port))
@@ -491,6 +496,22 @@ static u_int atmel_get_mctrl(struct uart_port *port)
 static void atmel_stop_tx(struct uart_port *port)
 {
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
+	int res;
+
+	/* Handle RS-485 */
+	if (port->rs485.flags & SER_RS485_ENABLED) {
+		res = atmel_uart_readl(port, ATMEL_US_CSR);
+		if (res & ATMEL_US_TXEMPTY) {
+			res = (port->rs485.flags & SER_RS485_RTS_AFTER_SEND) ?
+				1 : 0;
+			if (gpio_get_value(port->rts_gpio) != res) {
+				if (port->rs485.delay_rts_after_send > 0)
+					mdelay(
+					port->rs485.delay_rts_after_send);
+				gpio_set_value(port->rts_gpio, res);
+			}
+		}
+	}
 
 	if (atmel_use_pdc_tx(port)) {
 		/* disable PDC transmit */
@@ -520,12 +541,24 @@ static void atmel_stop_tx(struct uart_port *port)
 static void atmel_start_tx(struct uart_port *port)
 {
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
+	int res;
 
 	if (atmel_use_pdc_tx(port) && (atmel_uart_readl(port, ATMEL_PDC_PTSR)
 				       & ATMEL_PDC_TXTEN))
 		/* The transmitter is already running.  Yes, we
 		   really need this.*/
 		return;
+
+	/* Handle RS-485 */
+	if (port->rs485.flags & SER_RS485_ENABLED) {
+		/* if rts not already enabled */
+		res = (port->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
+		if (gpio_get_value(port->rts_gpio) != res) {
+			gpio_set_value(port->rts_gpio, res);
+			if (port->rs485.delay_rts_before_send > 0)
+				mdelay(port->rs485.delay_rts_before_send);
+		}
+	}
 
 	if (atmel_use_pdc_tx(port) || atmel_use_dma_tx(port))
 		if ((port->rs485.flags & SER_RS485_ENABLED) &&
@@ -829,8 +862,15 @@ static void atmel_complete_tx_dma(void *arg)
 		atmel_tasklet_schedule(atmel_port, &atmel_port->tasklet_tx);
 	else if ((port->rs485.flags & SER_RS485_ENABLED) &&
 		 !(port->rs485.flags & SER_RS485_RX_DURING_TX)) {
-		/* DMA done, stop TX, start RX for RS485 */
-		atmel_start_rx(port);
+		/*
+		 * DMA done, re-enable TXEMPTY and signal that we can stop
+		 * TX and start RX for RS485
+		 */
+
+		atmel_port->hd_start_rx = true;
+		atmel_uart_writel(port, ATMEL_US_IER,
+				  atmel_port->tx_done_mask);
+
 	}
 
 	spin_unlock_irqrestore(&port->lock, flags);
@@ -1271,11 +1311,26 @@ static void
 atmel_handle_transmit(struct uart_port *port, unsigned int pending)
 {
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
+	struct circ_buf *xmit = &port->state->xmit;
 
 	if (pending & atmel_port->tx_done_mask) {
 		/* Either PDC or interrupt transmission */
 		atmel_uart_writel(port, ATMEL_US_IDR,
 				  atmel_port->tx_done_mask);
+
+		/* Start RX if flag was set and FIFO is empty */
+		if (atmel_port->hd_start_rx) {
+			if (!(atmel_uart_readl(port, ATMEL_US_CSR)
+					& ATMEL_US_TXEMPTY)) {
+				dev_warn(port->dev, "Should start RX, but TX fifo is not empty\n");
+			}
+
+			atmel_port->hd_start_rx = false;
+			if (uart_circ_empty(xmit) || uart_tx_stopped(port))
+				atmel_stop_tx(port);
+			return;
+		}
+
 		atmel_tasklet_schedule(atmel_port, &atmel_port->tasklet_tx);
 	}
 }
@@ -1705,6 +1760,35 @@ static void atmel_init_rs485(struct uart_port *port,
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct atmel_uart_data *pdata = dev_get_platdata(&pdev->dev);
+	struct serial_rs485 *rs485conf = &port->rs485;
+	int ret;
+
+	//atmel_port->rts_gpio = -1; /* Invalid, zero could be valid */
+
+	/*
+	 * In theory the GPIO pin controlling RTS could be zero and
+	 * this would be an improper check, but we know that the only
+	 * existing case is != 0 and it's nice to use the zero-initialized
+	 * structs to indicate "no RTS GPIO" instead of open-coding some
+	 * invalid value everywhere.
+	 */
+	if (pdata && pdata->rts_gpio > 0)
+		port->rts_gpio = pdata->rts_gpio;
+	else if (np)
+		port->rts_gpio = of_get_named_gpio(np, "rtsgpio", 0);
+
+	if (gpio_is_valid(port->rts_gpio)) {
+		ret = devm_gpio_request(&pdev->dev, port->rts_gpio, "atmel-serial");
+		if (ret) {
+			dev_err(&pdev->dev, "error requesting RTS GPIO\n");
+		}
+		ret = gpio_direction_output(port->rts_gpio, 0);
+		if (ret) {
+			dev_err(&pdev->dev, "error setting up RTS GPIO\n");
+		}
+		gpio_export(port->rts_gpio, 0);
+	}
+
 
 	if (np) {
 		struct serial_rs485 *rs485conf = &port->rs485;
@@ -1715,6 +1799,14 @@ static void atmel_init_rs485(struct uart_port *port,
 			rs485conf->delay_rts_before_send = rs485_delay[0];
 			rs485conf->delay_rts_after_send = rs485_delay[1];
 			rs485conf->flags = 0;
+		}
+
+		if (of_property_read_bool(np, "rs485-rts-active-high")) {
+			rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+			rs485conf->flags &= ~SER_RS485_RTS_AFTER_SEND;
+		} else {
+			rs485conf->flags &= ~SER_RS485_RTS_ON_SEND;
+			rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
 		}
 
 		if (of_get_property(np, "rs485-rx-during-tx", NULL))
@@ -2911,6 +3003,9 @@ static int atmel_serial_probe(struct platform_device *pdev)
 				  ATMEL_US_RTSEN);
 	}
 
+	if (rs485_enabled) {
+		atmel_config_rs485(&atmel_port->uart, &atmel_port->uart.rs485);
+	}
 	/*
 	 * Get port name of usart or uart
 	 */

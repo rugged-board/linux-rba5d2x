@@ -121,8 +121,8 @@ struct uart_port {
 	unsigned int		(*serial_in)(struct uart_port *, int);
 	void			(*serial_out)(struct uart_port *, int, int);
 	void			(*set_termios)(struct uart_port *,
-				               struct ktermios *new,
-				               struct ktermios *old);
+						struct ktermios *new,
+						struct ktermios *old);
 	unsigned int		(*get_mctrl)(struct uart_port *);
 	void			(*set_mctrl)(struct uart_port *, unsigned int);
 	int			(*startup)(struct uart_port *port);
@@ -143,6 +143,7 @@ struct uart_port {
 	unsigned char		regshift;		/* reg offset shift */
 	unsigned char		iotype;			/* io access style */
 	unsigned char		unused1;
+	int                     rts_gpio;               /* optional RTS GPIO */
 
 #define UPIO_PORT		(SERIAL_IO_PORT)	/* 8b I/O port access */
 #define UPIO_HUB6		(SERIAL_IO_HUB6)	/* Hub6 ISA card */
@@ -177,21 +178,21 @@ struct uart_port {
 	 * The remaining bits are serial-core specific and not modifiable by
 	 * userspace.
 	 */
-#define UPF_FOURPORT		((__force upf_t) ASYNC_FOURPORT       /* 1  */ )
-#define UPF_SAK			((__force upf_t) ASYNC_SAK            /* 2  */ )
-#define UPF_SPD_HI		((__force upf_t) ASYNC_SPD_HI         /* 4  */ )
-#define UPF_SPD_VHI		((__force upf_t) ASYNC_SPD_VHI        /* 5  */ )
-#define UPF_SPD_CUST		((__force upf_t) ASYNC_SPD_CUST   /* 0x0030 */ )
-#define UPF_SPD_WARP		((__force upf_t) ASYNC_SPD_WARP   /* 0x1010 */ )
-#define UPF_SPD_MASK		((__force upf_t) ASYNC_SPD_MASK   /* 0x1030 */ )
-#define UPF_SKIP_TEST		((__force upf_t) ASYNC_SKIP_TEST      /* 6  */ )
-#define UPF_AUTO_IRQ		((__force upf_t) ASYNC_AUTO_IRQ       /* 7  */ )
-#define UPF_HARDPPS_CD		((__force upf_t) ASYNC_HARDPPS_CD     /* 11 */ )
-#define UPF_SPD_SHI		((__force upf_t) ASYNC_SPD_SHI        /* 12 */ )
-#define UPF_LOW_LATENCY		((__force upf_t) ASYNC_LOW_LATENCY    /* 13 */ )
-#define UPF_BUGGY_UART		((__force upf_t) ASYNC_BUGGY_UART     /* 14 */ )
+#define UPF_FOURPORT		((__force upf_t) ASYNC_FOURPORT       /* 1  */)
+#define UPF_SAK			((__force upf_t) ASYNC_SAK            /* 2  */)
+#define UPF_SPD_HI		((__force upf_t) ASYNC_SPD_HI         /* 4  */)
+#define UPF_SPD_VHI		((__force upf_t) ASYNC_SPD_VHI        /* 5  */)
+#define UPF_SPD_CUST		((__force upf_t) ASYNC_SPD_CUST   /* 0x0030 */)
+#define UPF_SPD_WARP		((__force upf_t) ASYNC_SPD_WARP   /* 0x1010 */)
+#define UPF_SPD_MASK		((__force upf_t) ASYNC_SPD_MASK   /* 0x1030 */)
+#define UPF_SKIP_TEST		((__force upf_t) ASYNC_SKIP_TEST      /* 6  */)
+#define UPF_AUTO_IRQ		((__force upf_t) ASYNC_AUTO_IRQ       /* 7  */)
+#define UPF_HARDPPS_CD		((__force upf_t) ASYNC_HARDPPS_CD     /* 11 */)
+#define UPF_SPD_SHI		((__force upf_t) ASYNC_SPD_SHI        /* 12 */)
+#define UPF_LOW_LATENCY		((__force upf_t) ASYNC_LOW_LATENCY    /* 13 */)
+#define UPF_BUGGY_UART		((__force upf_t) ASYNC_BUGGY_UART     /* 14 */)
 #define UPF_NO_TXEN_TEST	((__force upf_t) (1 << 15))
-#define UPF_MAGIC_MULTIPLIER	((__force upf_t) ASYNC_MAGIC_MULTIPLIER /* 16 */ )
+#define UPF_MAGIC_MULTIPLIER	((__force upf_t) ASYNC_MAGIC_MULTIPLIER /* 16 */)
 
 /* Port has hardware-assisted h/w flow control */
 #define UPF_AUTO_CTS		((__force upf_t) (1 << 20))
@@ -361,7 +362,7 @@ extern const struct earlycon_id *__earlycon_table_end[];
 
 #define _OF_EARLYCON_DECLARE(_name, compat, fn, unique_id)		\
 	static const struct earlycon_id unique_id			\
-	     EARLYCON_USED_OR_UNUSED __initconst			\
+		EARLYCON_USED_OR_UNUSED __initconst			\
 		= { .name = __stringify(_name),				\
 		    .compatible = compat,				\
 		    .setup = fn  };					\
@@ -471,7 +472,7 @@ uart_handle_sysrq_char(struct uart_port *port, unsigned int ch)
 	return 0;
 }
 #else
-#define uart_handle_sysrq_char(port,ch) ({ (void)port; 0; })
+#define uart_handle_sysrq_char(port, ch) ({ (void)port; 0; })
 #endif
 
 /*
@@ -501,7 +502,7 @@ static inline int uart_handle_break(struct uart_port *port)
 /*
  *	UART_ENABLE_MS - determine if port should enable modem status irqs
  */
-#define UART_ENABLE_MS(port,cflag)	((port)->flags & UPF_HARDPPS_CD || \
+#define UART_ENABLE_MS(port, cflag)	((port)->flags & UPF_HARDPPS_CD || \
 					 (cflag) & CRTSCTS || \
 					 !((cflag) & CLOCAL))
 
