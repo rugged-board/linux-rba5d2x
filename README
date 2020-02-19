@@ -17,3 +17,12 @@ See Documentation/00-INDEX for a list of what is contained in each file.
 Please read the Documentation/process/changes.rst file, as it contains the
 requirements for building and running the kernel, and information about
 the problems which may result by upgrading your kernel.
+
+COMPILING the kernel:
+
+     git clone https://github.com/rugged-board/linux-rba5d2x.git
+     cd linux-rba5d2x
+     git checkout origin/linux-rba5d2x
+     make rb_a5d2x_defconfig
+     make dtbs
+     make
