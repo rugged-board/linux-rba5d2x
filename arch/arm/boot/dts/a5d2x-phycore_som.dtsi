@@ -139,6 +139,12 @@
 					reg = <0x50>;
 					pagesize = <8>;
 				};
+
+				adc@6e {
+					compatible = "microchip,mcp3424";
+					reg = <0x6e>;
+					status = "okay";
+				};
 			};
 
 			som_led {
