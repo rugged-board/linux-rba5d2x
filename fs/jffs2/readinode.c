@@ -1231,8 +1231,8 @@ static int jffs2_do_read_inode_internal(struct jffs2_sb_info *c,
 		/* If it was a regular file, truncate it to the latest node's isize */
 		new_size = jffs2_truncate_fragtree(c, &f->fragtree, je32_to_cpu(latest_node->isize));
 		if (new_size != je32_to_cpu(latest_node->isize)) {
-			JFFS2_WARNING("Truncating ino #%u to %d bytes failed because it only had %d bytes to start with!\n",
-				      f->inocache->ino, je32_to_cpu(latest_node->isize), new_size);
+		/*	JFFS2_WARNING("Truncating ino #%u to %d bytes failed because it only had %d bytes to start with!\n",
+				      f->inocache->ino, je32_to_cpu(latest_node->isize), new_size); */
 			latest_node->isize = cpu_to_je32(new_size);
 		}
 		break;

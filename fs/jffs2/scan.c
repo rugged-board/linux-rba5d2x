@@ -731,8 +731,8 @@ scan_more:
 			continue;
 		}
 		if (je16_to_cpu(node->magic) == JFFS2_OLD_MAGIC_BITMASK) {
-			pr_warn("Old JFFS2 bitmask found at 0x%08x\n", ofs);
-			pr_warn("You cannot use older JFFS2 filesystems with newer kernels\n");
+		/*	pr_warn("Old JFFS2 bitmask found at 0x%08x\n", ofs);
+			pr_warn("You cannot use older JFFS2 filesystems with newer kernels\n"); */
 			if ((err = jffs2_scan_dirty_space(c, jeb, 4)))
 				return err;
 			ofs += 4;
@@ -740,10 +740,10 @@ scan_more:
 		}
 		if (je16_to_cpu(node->magic) != JFFS2_MAGIC_BITMASK) {
 			/* OK. We're out of possibilities. Whinge and move on */
-			noisy_printk(&noise, "%s(): Magic bitmask 0x%04x not found at 0x%08x: 0x%04x instead\n",
+		/*	noisy_printk(&noise, "%s(): Magic bitmask 0x%04x not found at 0x%08x: 0x%04x instead\n",
 				     __func__,
 				     JFFS2_MAGIC_BITMASK, ofs,
-				     je16_to_cpu(node->magic));
+				     je16_to_cpu(node->magic));	*/
 			if ((err = jffs2_scan_dirty_space(c, jeb, 4)))
 				return err;
 			ofs += 4;
@@ -771,9 +771,9 @@ scan_more:
 
 		if (ofs + je32_to_cpu(node->totlen) > jeb->offset + c->sector_size) {
 			/* Eep. Node goes over the end of the erase block. */
-			pr_warn("Node at 0x%08x with length 0x%08x would run over the end of the erase block\n",
+		/*	pr_warn("Node at 0x%08x with length 0x%08x would run over the end of the erase block\n",
 				ofs, je32_to_cpu(node->totlen));
-			pr_warn("Perhaps the file system was created with the wrong erase size?\n");
+			pr_warn("Perhaps the file system was created with the wrong erase size?\n"); */
 			if ((err = jffs2_scan_dirty_space(c, jeb, 4)))
 				return err;
 			ofs += 4;
